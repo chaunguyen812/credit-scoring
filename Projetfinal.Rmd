@@ -1,0 +1,921 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+```{r}
+plot(cars)
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file). 
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+
+```{r}
+# ---------------------------------------------------------------------------------------------------------
+# PROJET MASTER1 MEDAS # 
+# Objectif: Analyser eet prevoir le comportement de remboursement du credit des clients # 
+# Realisees par : NGUYEN Thi Bao Chau-PIERROT Ruben # 
+# ---------------------------------------------------------------------------------------------------------
+
+
+
+# ---------------------------------------------------------------------------------------------------------
+#A. Installation des packages
+# ---------------------------------------------------------------------------------------------------------
+
+install.packages('ada')
+
+install.packages('arules')
+
+install.packages('C50')
+
+install.packages('CHAID')
+
+install.packages('e1071')
+
+install.packages('FactoMineR')
+
+install.packages('foreign')
+
+install.packages('gbm')
+
+install.packages('ipred')
+
+install.packages('lattice')
+
+install.packages('leaps')
+
+install.packages('pROC')
+
+install.packages('randomForest')
+
+install.packages('randtoolbox')
+
+install.packages('rgl')
+
+install.packages('rgrs')
+
+install.packages('ROCR')
+
+install.packages('rpart')
+
+install.packages('tree')
+
+install.packages('openxlsx')
+
+```
+```{r}
+# Importer les donnes #
+library('openxlsx')
+projet <- read.xlsx("/Users/nguyenchau/Documents/Credit scoring/Data.xlsx")
+summary(projet)
+
+```
+
+```{r}
+# Ajout d'un identifiant (le numero de ligne)
+projet$Cle <- seq(1,nrow(projet)) 
+
+# Discretisation de la variable cible
+
+projet$Cible <- factor(projet$Cible)
+
+# Transformation des variables qualitatives en facteurs 
+
+varquali <- c("Situation_familiale","Enfants", "Job", "Retraite", "Statut_domicile",
+              
+              "Telephone")
+
+indices <- names(projet) %in% varquali
+
+for (i in (1:ncol(projet))) { if (indices[i] == 1) { projet[,i] <- as.factor(projet[,i]) } }
+
+```
+
+```{r}
+# ---------------------------------------------------------------------------------------------------------
+# B. Fait analyser descriptives les variables continues selon le graphique ####
+# ---------------------------------------------------------------------------------------------------------
+par(mfrow = c(1,1))
+hist(x = as.numeric(projet$Age_emprt), col = "lightblue", main = "Age_emprunt")
+hist(x = as.numeric(projet$Enfants), col = "red", main = "Nombre d'enfant")
+hist(x = as.numeric(projet$Anciennete_emploi) , col = "violet", main = "Anciennite d'emploi")
+hist(x = as.numeric(projet$Anciennete_domicile) , col = "green", main = "Anciennite de domicile")
+hist(x = as.numeric(projet$Anciennete_banque) , col = "yellow", main = "L'anciennite de banque")
+hist(x = as.numeric(projet$Revenus) , col = "blue", main = "Revenu")
+hist(x = as.numeric(projet$Charges) , col = "pink", main = "Charge", xlab = "")
+
+```
+```{r}
+# Analyse des variables continues selon que la variable cible prenne 0 et 1
+
+by(projet[,c("Age_emprt","Enfants","Anciennete_emploi","Anciennete_domicile","Anciennete_banque","Revenus","Charges","Situation_familiale","Job","Retraite","Statut_domicile","Telephone")],list(Cible=projet$Cible),summary)
+```
+
+```{r}
+# Tester de Krustal Walllis pour voir la liaison entre les variables continues et la variable cible
+
+library(lattice)
+
+# Ho: les groupes des variables revenues sont les memes avec la variale CIble#
+
+kruskal.test(projet$Revenus~projet$Cible) 
+
+kruskal.test(projet$Age_emprt~projet$Cible)
+
+kruskal.test(projet$Enfants~projet$Cible)
+
+kruskal.test(projet$Anciennete_emploi~projet$Cible)
+
+kruskal.test(projet$Anciennete_domicile~projet$Cible)
+
+kruskal.test(projet$Anciennete_banque~projet$Cible)
+
+kruskal.test(projet$Charges~projet$Cible)
+
+kruskal.test(projet$Situation_familiale~projet$Cible)
+
+kruskal.test(projet$Job~projet$Cible)
+
+kruskal.test(projet$Retraite~projet$Cible)
+
+kruskal.test(projet$Statut_domicile~projet$Cible)
+
+kruskal.test(projet$Telephone~projet$Cible)
+# Selon le resultat de test, la varibale Enfant et Charge semble n'ont pas de lien avec la variable Cible(pvalue>0.05) #
+```
+```{r}
+# ---------------------------------------------------------------------------------------------------------
+
+# C.Nettoyer et Discretisation des variables continues
+
+# ---------------------------------------------------------------------------------------------------------
+
+# Analyse des quantiles
+
+# Age_coemp , Charges, Revenus, Anciennete_domiciel ne sont pas coherents, il faut redistribuer # 
+
+# Analyse des quantiles
+
+quantile(projet$Age_emprt , probs = seq(0, 1, 0.25), na.rm = TRUE,names = TRUE, type = 7)
+
+quantile(projet$Anciennete_domicile  , probs = seq(0, 1, 0.25), na.rm = TRUE,names = TRUE, type = 7)
+
+quantile(projet$Anciennete_banque, probs = seq(0, 1, 0.25), na.rm = TRUE,names = TRUE, type = 7)
+
+quantile(projet$Anciennete_emploi   , probs = seq(0, 1, 0.25), na.rm = TRUE,names = TRUE, type = 7)
+
+quantile(projet$Revenus  , probs = seq(0, 1, 0.25), na.rm = TRUE,names = TRUE, type = 7)
+
+quantile(projet$Charges  , probs = seq(0, 1, 0.25), na.rm = TRUE,names = TRUE, type = 7)
+
+```
+
+```{r}
+# Discreation selon les quantiles
+
+q_Age_emprt <- cut(projet$Age_emprt,c(218,421,546,690,Inf),right=TRUE)
+
+q_Anciennete_domicile <- cut(projet$Anciennete_domicile,c(0,31,81,202,Inf),right=TRUE)
+
+q_Anciennete_banque <- cut(projet$Anciennete_banque,c(0,103,203,338,Inf),right=TRUE)
+
+q_Anciennete_emploi <- cut(projet$Anciennete_emploi,c(0,30,80,169,Inf),right=TRUE)
+
+q_Revenus <- cut(projet$Revenus,c(800,1455,2000,2800,Inf),right=TRUE)
+
+q_Charges <- cut(projet$Charges,c(0,350,580,Inf),right=TRUE)
+```
+
+```{r}
+# Pourcentage de defaut selon la quantile de chaque variable: OK 
+
+# 0: rembouser 
+
+# 1: non rembourser
+
+tab_Age_emprt<- table(q_Age_emprt,projet$Cible)
+
+prop.table(tab_Age_emprt,1)
+
+tab_Anciennete_domicile<- table(q_Anciennete_domicile,projet$Cible)
+
+prop.table(tab_Anciennete_domicile,1)
+
+tab_Anciennete_banque<- table(q_Anciennete_banque,projet$Cible)
+
+prop.table(tab_Anciennete_banque,1)
+
+tab_Anciennete_emploi<- table(q_Anciennete_emploi,projet$Cible)
+
+prop.table(tab_Anciennete_emploi,1)
+
+tab_Revenus<- table(q_Revenus,projet$Cible)
+
+prop.table(tab_Revenus,1)
+
+tab_Charges<- table(q_Charges,projet$Cible)
+
+prop.table(tab_Charges,1)
+```
+```{r}
+# Representation  graphique des taux d'impayes par intervalle et recorder les variables explicatives finales 
+
+barplot(t(prop.table(tab_Age_emprt,1)[,2]),ylim=c(0,0.5),las=3,main="Age_emprt",ylab="Taux d'impayes",density=0)
+
+abline(h=.10,lty=2)
+
+Age_emprt1 <- cut(projet$Age_emprt,c(218,421,546,690,Inf),right=F)
+
+barplot(t(prop.table(tab_Anciennete_domicile,1)[,2]),ylim=c(0,0.5),las=3,main="Anciennete_domicile",ylab="Taux d'impayes",density=0)
+
+abline(h=.10,lty=2)
+
+Anciennete_domicile1 <- cut(projet$Anciennete_domicile,c(0,31,81,202,Inf),right=F)
+
+barplot(t(prop.table(tab_Anciennete_banque,1)[,2]),ylim=c(0,0.5),las=3,main="Anciennete_banque",ylab="Taux d'impayes",density=0)
+
+abline(h=.10,lty=2)
+
+Anciennete_banque1 <- cut(projet$Anciennete_banque,c(0,103,203,338,Inf),right=F)
+
+barplot(t(prop.table(tab_Anciennete_emploi,1)[,2]),ylim=c(0,0.5),las=3,main="Anciennete_emploi",ylab="Taux d'impayes",density=0)
+
+abline(h=.10,lty=2)
+
+Anciennete_emploi1 <- cut(projet$Anciennete_emploi,c(0,30,80,169,Inf),right=F)
+
+barplot(t(prop.table(tab_Revenus,1)[,2]),ylim=c(0,0.5),las=3,main="Revenus",ylab="Taux d'impay?s",density=0)
+
+abline(h=.10,lty=2)
+
+Revenus1 <- cut(projet$Revenus,c(800,1487,2000,2886,Inf),right=F)
+
+barplot(t(prop.table(tab_Charges,1)[,2]),ylim=c(0,0.5),las=3,main="Charges",ylab="Taux d'impayes",density=0)
+
+abline(h=.10,lty=2)
+
+Charges1 <- cut(projet$Charges,c(0,350,580,Inf),right=F)
+
+```
+
+```{r}
+# ----------------------------------------------------------------------------------------
+
+# D. Liaisons des variables explicatives avec la variable expliquee
+
+# ----------------------------------------------------------------------------------------
+
+
+# chisq et V de Cramer des variables explicatives
+
+# Les variables continues tant sous leur forme discretisees
+
+# Creation d'une nouvelle data frame
+
+#exclusion des variables initiales (continues et brutes)
+
+npred <- -grep('(Cle|Cible|Revenus|Age_emprt|Anciennete_domicile|Anciennete_banque|Anciennete_client|Anciennete_emploi|Charges|Age..Age_client|Age..Anciennete_emploi|Age..Age_Banque)', names(projet))
+
+projet1 <- projet[,npred]
+
+# Alimenation du data frame des variables continues et discretes transform?es
+
+projet1$Age_emprt1 <- Age_emprt1
+
+projet1$Anciennete_banque1 <- Anciennete_banque1
+
+projet1$Anciennete_domicile1 <- Anciennete_domicile1
+
+projet1$Anciennete_emploi1 <- Anciennete_emploi1
+
+projet1$Revenus1 <- Revenus1
+
+projet1$Charges1 <- Charges1
+
+summary(projet1)
+```
+
+```{r}
+# Calcul du V de Cramer entre la variable "Cible" et les variables explicatives
+library(questionr)
+
+cramer_1  <- matrix(NA,ncol(projet1),3) #Crrer une matrix NA avec 3 cols et #
+
+for (i in (1:ncol(projet1)))
+  
+{     cramer_1[i,1] <- names(projet1[i])
+
+cramer_1[i,2] <- cramer.v(table(projet1[,i],projet$Cible))
+
+cramer_1[i,3] <- chisq.test(table(projet1[,i],projet$Cible))$p.value
+
+}
+
+colnames(cramer_1) <- c("variable","Cramer V","p-value chi2")
+
+
+
+# Affichage des variables par V de Cramer dcroissants: 
+vcramer <- cramer_1 [order(cramer_1[,2], decreasing=T),]
+
+# Graphique
+par(mar = c(8, 4, 4, 0))
+
+barplot(as.numeric(vcramer[,2]),col=gray(0:nrow(vcramer)/nrow(vcramer)),
+        
+        names.arg=vcramer[,1], ylab='V de Cramer', ylim=c(0,0.35),cex.names = 0.8, las=3)
+# Selon le graphiques VCramer, les variables Statut domicile, Job, Situation familiales sont les 3 variables les plus coherants avec la variable Cible 
+# La varibale Enfants est la variable qui a le lien plus faible avec la varible Cible
+```
+
+```{r}
+## Test statistique de Fisher# 
+
+# Revenus #
+chisq_Revenus <- chisq.test(projet1$Revenus,projet$Cible) 
+chisq_Revenus$p.value # Significatif
+
+# Retraites # 
+
+chisq_Retraite <- chisq.test(projet1$Retraite,projet$Cible)            
+
+chisq_Retraite$p.value # Significatif #
+
+#Job
+
+chisq_Job <- chisq.test(projet1$Job,projet$Cible)            
+
+cramer_Job<-sqrt((chisq_Job$statistic)/(length(projet$Job)))
+
+chisq_Job$p.value # Significatif # 
+
+#Telephone
+
+chisq_Telephone <- chisq.test(projet1$Telephone,projet$Cible)            
+
+cramer_Telephone<-sqrt((chisq_Telephone$statistic)/(length(projet$Telephone)))
+
+chisq_Telephone$p.value # Significatif #
+
+#Statut_domicile
+
+chisq_Statut_domicile <- chisq.test(projet1$Statut_domicile,projet$Cible)            
+
+cramer_Statut_domicile<-sqrt((chisq_Statut_domicile$statistic)/(length(projet$Statut_domicile)))
+
+chisq_Statut_domicile$p.value # Significatif # 
+
+#Situation_familiale
+
+chisq_Situation_familiale <- chisq.test(projet1$Situation_familiale,projet$Cible)            
+
+cramer_Situation_familiale<-sqrt((chisq_Situation_familiale$statistic)/(length(projet$Situation_familiale)))
+
+chisq_Situation_familiale$p.value # Significatif#
+# Chacune des 6 variables est significatif avec la variable expliquee Cible
+
+```
+
+```{r}
+# Recodage et combinaison des modalites
+
+install.packages('car')
+
+install.packages('lme4')
+
+library(car)
+
+summary(projet1$Enfants)
+
+projet1$Enfants <- recode(projet1$Enfants, "1:2='Plus 1 enfants';3='3 enfants';4:7='Plus de 3 enfants'; 0='Aucun enfant'" )
+
+```
+```{r}
+# ----------------------------------------------------------------------------------------
+
+# E. Liaisons entre variables explicatives
+
+# ----------------------------------------------------------------------------------------
+
+install.packages('Rcpp')
+
+library(questionr)
+
+cramer_2  <- matrix(NA,ncol(projet1),ncol(projet1))
+
+# variante 1
+
+for (i in (1:ncol(projet1)))
+  
+{     for (j in (1:ncol(projet1)))
+  
+{
+  
+  cramer_2[i,j] <- cramer.v(table(projet1[,i],projet1[,j]))
+  
+}
+  
+}
+
+colnames(cramer_2) <- colnames(projet1)
+
+rownames(cramer_2) <- colnames(projet1)
+
+cramer_2
+
+
+#pour eviter d'avoir des colonnes avec N.A dans la matrice
+
+cramer_2[is.na(cramer_2)] <- 0 
+```
+
+```{r}
+# Representation simplifie de la matrice "CRAMER"
+install.packages('corrplot')
+library(corrplot)
+
+corrplot(cramer_2)
+
+corrplot(cramer_2, method="shade", shade.col=NA, tl.col="black", tl.srt=30,type="upper")
+
+corrplot(cramer_2,type="upper",tl.srt=30,tl.col="black",tl.cex=1,diag=F,addCoef.col="black",addCoefasPercent=T)
+
+```
+
+```{r}
+# ----------------------------------------------------------------------------------------
+
+# F. Echantillonnage
+
+# ----------------------------------------------------------------------------------------
+
+# Creation de l'echantillon de validation sur la base de depart:
+
+install.packages('randtoolbox')
+
+install.packages('rngWELL')
+
+library(randtoolbox)
+
+library(rngWELL)
+
+projet1$Cible<-projet$Cible  #ajout cible dans dataframe
+
+d = sort(sample(nrow(projet1), nrow(projet1) * 0.7)) 
+
+train  <- projet1[d,]        # echantillons d'apprentissage : 70% d'echantillon 
+
+valid  <- projet1[-d,]       # echantillons de validation : 30% d'echantillon 
+
+```
+
+```{r}
+# ---------------------------------------------------------------------------------------------------------
+# G. Regression logistique
+# ---------------------------------------------------------------------------------------------------------
+
+install.packages('combinat')
+
+install.packages('ROCR')
+
+install.packages('gplots')
+
+library(combinat)
+
+library(ROCR)
+
+library(gplots)
+
+# modele trivial reduit  la constante
+
+str_constant <- "~ 1"
+
+# modele complet incluant toutes les explicatives potentielles
+
+str_all <- "~ Situation_familiale+Enfants+Job+Retraite+Statut_domicile+Telephone+Age_emprt1+Anciennete_banque1+
+
+Anciennete_domicile1+Anciennete_emploi1+Revenus1+Charges1"
+
+require(MASS)
+
+```
+
+```{r}
+# Foreward #
+
+modele <- glm(Cible ~ 1, data = train, family = binomial)
+
+modele.forward <- stepAIC(modele, scope = list(lower = str_constant, upper = str_all), 
+                          
+                          trace = TRUE, data = train, direction = "forward")
+```
+
+```{r}
+# backward #
+modele.bw <- stepAIC(modele, scope = list(lower = str_constant, upper = str_all), 
+                          
+                          trace = TRUE, data = train, direction = "backward")
+```
+
+```{r}
+# Both #
+modele.both <- stepAIC(modele, scope = list(lower = str_constant, upper = str_all), 
+                     
+                     trace = TRUE, data = train, direction = "both")
+```
+
+```{r}
+# Comparaison AIC des 3 methodes
+AIC(modele.forward)
+AIC(modele.bw)
+AIC(modele.both)
+# La methode FW et Both donne le meme resultat avec AIC plus petite par rapport aux Backward
+
+```
+
+```{r}
+#Methode Forward
+summary(modele.forward)
+fit.modele.forward <- fitted.values(modele.forward)
+```
+
+```{r}
+# Application du modele  un jeu de donnees
+
+# Data train 
+train.ascbic <- predict(modele.forward, newdata=train, type="response")
+pred.train <- prediction(train.ascbic, train$Cible, label.ordering=c(0,1))
+logis_AUC = round(performance(pred.train,"auc")@y.values[[1]]*100,2) 
+logis_AUC
+# AUC de la methode Foward pour le data train : 77.1
+
+```
+
+```{r}
+# Data test
+valid.ascbic <- predict(modele.forward, newdata=valid, type="response")
+pred.valid <- prediction(valid.ascbic, valid$Cible, label.ordering=c(0,1))
+logistest_AUC = round(performance(pred.valid,"auc")@y.values[[1]]*100,2) 
+logistest_AUC
+# Performance du data test, AUC = 77.45
+
+```
+
+```{r}
+# Aire sous la courbe ROC
+
+library(ROCR)
+library(pROC)
+# Tracer la courbe ROC data test 
+perf.valid<- performance(pred.valid,"tpr","fpr") 
+plot(perf.valid,colorize=TRUE,main='Courbe ROC methode FW data test') 
+segments(0,0,1,1,col='grey',lty=3)
+
+# Tracer la courbe ROC data train   
+perf.train<- performance(pred.train,"tpr","fpr") 
+plot(perf.train,colorize=TRUE,main='Courbe ROC methode FW data train') 
+segments(0,0,1,1,col='grey',lty=3)
+```
+
+```{r}
+# ----------------------------------------------------------------------------------------
+#H. La methode Lasso # 
+# ----------------------------------------------------------------------------------------
+
+library(glmnet)
+
+require(glmnet)
+
+# Recoder les variables explicatives en factors #
+train1 = train
+train1$Situation_familiale=recode(train1$Situation_familiale,"'Célibataire'=1;'Concubin'=2;'Divorcé'=3;'Marié'=4;'Veuf'=5")
+train1$Enfants=recode(train1$Enfants,"'Plus 1 enfants'=1;'3 enfants'=2;'Plus de 3 enfants'=3;'Aucun enfant'=4")
+train1$Job=recode(train1$Job,"'A'=1;'B'=2;'C'=3;'D'=4;'E'=5")
+train1$Retraite=recode(train1$Retraite,"'Oui'=0;'Non'=1;")
+train1$Statut_domicile=recode(train1$Statut_domicile,"'Accédant'=1;'Famille'=2;'Lgt Fonction'=3;'Locataire'=4;'Propriétaire'=5")
+train1$Telephone=recode(train1$Telephone,"'Fix'=1;'Mob'=2;'Non'=3")
+train1$Age_emprt1=recode(train1$Age_emprt1,"'[218,421)'=1;'[421,546)'=2;'[546,690)'=3;'[690,Inf)'=4")
+train1$Anciennete_banque1=recode(train1$Anciennete_banque1,"'[0,103)'=1;'[103,203)'=2;'[203,338)'=3;'[338,Inf)'=4")
+train1$Anciennete_domicile1=recode(train1$Anciennete_domicile1,"'[0,31)'=1;'[31,81)'=2;'[81,202)'=3;'[202,Inf)'=4") 
+train1$Anciennete_emploi1=recode(train1$Anciennete_emploi1,"'[0,30)'=1;'[30,80)'=2;'[80,169)'=3;'[169,Inf)'=4")
+train1$Revenus1=recode(train1$Revenus1,"'[800,1.49e+03)'=1;'[1.49e+03,2e+03)'=2;'[2e+03,2.89e+03)'=3;'[2.89e+03,Inf)'=4") 
+train1$Charges1=recode(train1$Charges1,"'[0,350)'=1;'[350,580)'=2;'[580,Inf)'=3;") 
+train2 = apply(train1,2,as.numeric)
+# Convestir le data train en numeric pour faire la regression Lasso 
+# Convertir le matrix des variables explicatives en num?ric 
+X = as.matrix(train1[,c(1:12)])
+X1 = apply(X,2,as.numeric)
+
+#La variable expliquee
+y =as.matrix(train1$Cible)
+y1=as.matrix(sapply(y,as.numeric))
+```
+
+
+```{r}
+# Regression Lasso #
+lasso<-glmnet(X1,y1,family= "binomial", alpha=1)
+plot(lasso)
+coef(lasso)
+
+# CV lasso 
+fit2 = cv.glmnet(X1,y1)
+plot(fit2)
+print(fit2)
+coef(fit2,s=fit2$lambda.min)
+# Pour la methode Lasso, les variables explicatives significatives ce sont les variables avec les coefficients differents de 0
+# Selon Le graphique Mean Squared Error, on peut trouver que le lamda  = -9 qui minimisent le MSE de modele 
+```
+
+```{r}
+# Evaluer la performance du modele pour le data train 
+lasso.prob <- predict(fit2,type="response", newx =X1, s = 'lambda.min')
+lasso.pred <- prediction(lasso.prob,y1)
+lasso_perf <- performance(lasso.pred, "tpr", "fpr")
+lasso_AUROC <- round(performance(lasso.pred, measure = "auc")@y.values[[1]]*100, 2) 
+lasso_AUROC
+# AUC de la methode Lasso pour le data train: 73.86
+
+```
+
+```{r}
+# Creer une nouvelle data set de valide pour tester la performance de la methode Lasso # 
+valid1 = valid
+valid1$Situation_familiale=recode(valid1$Situation_familiale,"'Célibataire'=1;'Concubin'=2;'Divorcé'=3;'Marié'=4;'Veuf'=5")
+valid1$Enfants=recode(valid1$Enfants,"'Plus 1 enfants'=1;'3 enfants'=2;'Plus de 3 enfants'=3;'Aucun enfant'=4")
+valid1$Job=recode(valid1$Job,"'A'=1;'B'=2;'C'=3;'D'=4;'E'=5")
+valid1$Retraite=recode(valid1$Retraite,"'Oui'=0;'Non'=1;")
+valid1$Statut_domicile=recode(valid1$Statut_domicile,"'Accédant'=1;'Famille'=2;'Lgt Fonction'=3;'Locataire'=4;'Propriétaire'=5")
+valid1$Telephone=recode(valid1$Telephone,"'Fix'=1;'Mob'=2;'Non'=3")
+valid1$Age_emprt1=recode(valid1$Age_emprt1,"'[218,421)'=1;'[421,546)'=2;'[546,690)'=3;'[690,Inf)'=4")
+valid1$Anciennete_banque1=recode(valid1$Anciennete_banque1,"'[0,103)'=1;'[103,203)'=2;'[203,338)'=3;'[338,Inf)'=4")
+valid1$Anciennete_domicile1=recode(valid1$Anciennete_domicile1,"'[0,31)'=1;'[31,81)'=2;'[81,202)'=3;'[202,Inf)'=4") 
+valid1$Anciennete_emploi1=recode(valid1$Anciennete_emploi1,"'[0,30)'=1;'[30,80)'=2;'[80,169)'=3;'[169,Inf)'=4")
+valid1$Revenus1=recode(valid1$Revenus1,"'[800,1.49e+03)'=1;'[1.49e+03,2e+03)'=2;'[2e+03,2.89e+03)'=3;'[2.89e+03,Inf)'=4") 
+valid1$Charges1=recode(valid1$Charges1,"'[0,350)'=1;'[350,580)'=2;'[580,Inf)'=3;") 
+```
+
+```{r}
+# Convestir en type matrix de numeric pour tester la performance de la methode Lasso # 
+Valid2 = apply(valid1[c(1:nrow(valid1)),c(1:ncol(valid1)-1)],2,as.numeric)
+lasso.prob.valid <- predict(fit2,type="response", newx = Valid2, s = 'lambda.min')
+lasso.pred.valid <- prediction(lasso.prob.valid,as.numeric(valid1$Cible))
+lasso_perf_valid <- performance(lasso.pred.valid, "tpr", "fpr")
+lasso_AUROC_valid <- round(performance(lasso.pred.valid, measure = "auc")@y.values[[1]]*100, 2)
+lasso_AUROC_valid
+#AUC de la methode Lasso pour le data test = 75.56
+```
+
+```{r}
+#Performance de Lasso Regression du data set  
+plot(lasso_perf_valid,colorize=T, main="Courbe ROC de Lasso Regression data test") # plot ROC curve
+lines(c(0,1),c(0,1),col = "gray", lty = 4 )
+```
+
+```{r}
+# ---------------------------------------------------------------------------------------------------------
+# K. Random forecast #
+# ---------------------------------------------------------------------------------------------------------
+library('randomForest')
+# Modele Random forest de base 
+rd <- randomForest(Cible ~ ., data = train)
+rd
+# Avec la methode Random Forest de base, on trouve le Out Of Bag error rate en appliquant sur le data train = 11,55%
+```
+```
+```
+```{r}
+# Ameliration le resultat de prevision 
+rdbis <- randomForest(Cible ~ .,data = train, ntree=5000, importance=T, proximity=T,mtry = 2, na.action = na.roughfix) 
+rdbis
+# On va ameliorer la qualite de ramdom forecast en ajoutant le nombre d'abre ,le Out Of Bag error est plus ameliorepar rapport aux modele de base : 10,38%
+```
+```{r}
+
+```
+
+```{r}
+# Examiner AUC de random forecast sur le data train # 
+rd_fitForest <- predict(rdbis, newdata = train, type="prob")[,2]
+rdtrain_pred <- prediction(rd_fitForest, train$Cible)
+rdtrain_perf <- performance(rdtrain_pred, "tpr", "fpr")
+rdtrain_AUROC <- round(performance(rdtrain_pred, measure = "auc")@y.values[[1]]*100, 2)
+rdtrain_AUROC
+# AUC de la methode random forest sur le data train : 98.47
+```
+
+```{r}
+# Examiner AUC de random forecast sur le data test #  
+rd_fitForest_valid = predict(rdbis, newdata= valid, type="prob")[,2]
+rd_pred <- prediction(rd_fitForest_valid, valid$Cible)
+rd_perf <- performance(rd_pred, "tpr", "fpr")
+rd_AUROC <- round(performance(rd_pred, measure = "auc")@y.values[[1]]*100, 2) #
+rd_AUROC
+# AUC appliquant sur le data test est 71.16
+```
+
+```{r}
+# Graphiques Choissir les variables les plus pertinances #
+
+varImpPlot(rdbis, main="Random Forest: Variable Importance")
+```
+```{r}
+# Table des importants des variables
+rdbis$importance[order(rdbis$importance[, 1], decreasing = TRUE), ]
+# Donc, selon le graphique et le tableau de resultat, on peut considerer que les variables qui comptent le plus pour distinguer le comportement de rembousement du credit et non rembousement sont le Job, Anciennete domicile, Revenus et Situation familiale..... 
+# La variable Retraite semble n'a aucun effet pour distingue le comportement de remboursement du credit des clients 
+```
+
+```{r}
+# La courbe ROC
+plot(rd_perf,colorize=TRUE, lwd=2, main = "La courbe ROC de Random Forest data test", col = "blue")
+lines(x=c(0, 1), y=c(0, 1), col="red", lwd=1, lty=3);
+lines(x=c(1, 0), y=c(0, 1), col="green", lwd=1, lty=4)
+
+# La courbe ROC de Random Forecast s
+plot(rdtrain_perf,colorize=TRUE,main='Courbe ROC de la methode Random Forecast de data train ') 
+segments(0,0,1,1,col='grey',lty=3)
+lines(x=c(0, 1), y=c(0, 1), col="red", lwd=1, lty=3);
+lines(x=c(1, 0), y=c(0, 1), col="green", lwd=1, lty=4)
+```
+
+```{r}
+# ---------------------------------------------------------------------------------------------------------
+# L.Arbres de decision
+# ---------------------------------------------------------------------------------------------------------
+# arbre de decision CART
+library('rpart')
+
+
+# parametres de rpart
+# methode = class ou anova pour arbre de regression
+
+set.seed(235)
+cart <- rpart(Cible ~ . ,data = train,method="class",parms=list(split="gini"),cp=0)
+cart
+```
+
+```{r}
+# Graphique d'arbre de decision
+plot(cart, uniform=TRUE, branch=0.5, margin=0.1,main="CART pour credit scoring")
+text(cart, all=FALSE, use.n=TRUE)
+```
+
+```{r}
+# Score data train 
+tree_score_train <- predict(cart,type='prob',train)[,2]
+tree_pred_train <- prediction(tree_score_train,train$Cible)
+tree_perf_train <- performance(tree_pred_train,"tpr","fpr")
+tree_auc_train <- round(performance(tree_pred_train, measure = "auc")@y.values[[1]]*100, 2) 
+tree_auc_train
+#AUC appliquant sur le data train est 79.71
+```
+
+```{r}
+# Score data test 
+tree_score <- predict(cart,type='prob',valid,label.ordering=c(0,1))[,2]
+tree_pred <- prediction(tree_score,valid$Cible)
+tree_perf <- performance(tree_pred,"tpr","fpr")
+tree_auc <- round(performance(tree_pred, measure = "auc")@y.values[[1]]*100, 2) 
+tree_auc
+#AUC appliquant sur le data test 73.65
+```
+
+```{r}
+# Courbe ROC 
+plot(tree_perf,colorize=TRUE,main='Courbe ROC de la methode abre de decision de data test') 
+segments(0,0,1,1,col='grey',lty=3)
+lines(x=c(0, 1), y=c(0, 1), col="red", lwd=1, lty=3);
+lines(x=c(1, 0), y=c(0, 1), col="green", lwd=1, lty=4)
+```
+
+```{r}
+# ---------------------------------------------------------------------------------------------------------
+# M. Comparaison les performances des modeles par les graphiques des courbes ROC: # 
+# ---------------------------------------------------------------------------------------------------------
+# Graphique des courbes ROC avec toutes les methodes de data train #
+par(mfrow = c(1,1))
+plot(perf.train,col='blue',lty=1 ,main='ROCs: Model Performance Comparision de data train') 
+plot(lasso_perf,col='gold',lty=2 ,add = TRUE) #Lasso Regression data test#
+plot(rdtrain_perf,col='green',lty=3,add =TRUE)# Random Forecast de data train ')
+plot(tree_perf_train,col='red',lty=4,add=TRUE); #abre de decision de data test#
+legend(0.6,0.5,
+       c('perf.valid:logistic reg','lasso_perf_valid:Lasso regression','rd_perf:Random Forecast', 
+         'tree_perf:Abre des decisions'),
+       col=c('blue','gold','green','red'),
+       lwd=3);
+lines(c(0,1),c(0,1),col = "gray", lty = 4 )
+
+## Graphique des courbes ROC avec toutes les methodes de data test # 
+plot(perf.valid,col='blue',lty=1,main='ROCs: Model Performance Comparision de data test') #Logistic regression
+plot(lasso_perf,col='gold',lty=2,add=TRUE);  #Lasso Regression data test#
+plot(rd_perf,col='green', lty=3,add=TRUE);#Random Forest data test#
+plot(tree_perf,col='red',lty=4,add=TRUE); #abre de decision de data test#
+legend(0.6,0.5,
+       c('perf.valid:logistic reg','lasso_perf_valid:Lasso regression','rd_perf:Random Forecast', 
+         'tree_perf:Abre des decisions'),
+       col=c('blue','gold','green','red'),
+       lwd=3);
+lines(c(0,1),c(0,1),col = "gray", lty = 4 )
+```
+
+```{r}
+# ---------------------------------------------------------------------------------------------------------
+#N. Performance Table #
+# ---------------------------------------------------------------------------------------------------------
+models <- c('Logistic regression FW',
+            'Lasso regression', 
+            'Random Forest',
+            'Abre de decision')
+
+# AUCs data test
+models_AUC_test <- c(logistest_AUC,lasso_AUROC_valid,rd_AUROC, tree_auc)# AUCs# AUCs data train
+
+# Combine AUC
+model_performance_metric <- as.data.frame(cbind(models,models_AUC_test))
+
+# Colnames 
+colnames(model_performance_metric) <- c("Model","AUC data test")
+View(model_performance_metric)
+
+# On va evaluer la qualite du modele selon la qualite sur l'echantillon de test # 
+# Donc, selon le critere AUC, la methode Regression Logistique avec la methode Forward qui est le modele 
+# avec le performance le plus eleve #
+```
+
+```{r}
+# ---------------------------------------------------------------------------------------------------------
+# O. GRILLE DU SCORE  #
+# ---------------------------------------------------------------------------------------------------------
+# Donc, apres avoir choisi la methode Lasso Regression "Forward" est la methode qui donne AUC le plus eleve. On a construit le grille du score se base sur ce modele 
+summary(modele.forward)
+VARIABLE=c("",gsub("[0-9]", "", names(unlist(modele.forward$xlevels))))
+MODALITE=c("",as.character(unlist(modele.forward$xlevels)))
+names=data.frame(VARIABLE,MODALITE,NOMVAR=c("(Intercept)",paste(VARIABLE,MODALITE,sep="")[-1]))
+regression=data.frame(NOMVAR=names(coefficients(modele.forward)),COEF=as.numeric(coefficients(modele.forward)))
+param = merge(names,regression,all.x=TRUE)[-1]
+param$COEF[is.na(param$COEF)] <- 0 
+# calcul du poids total pour normalisation
+mini=aggregate(data.frame(min = param$COEF), by = list(VARIABLE = param$VARIABLE), min)
+maxi=aggregate(data.frame(max = param$COEF), by = list(VARIABLE = param$VARIABLE), max)
+total=merge(mini,maxi)
+total$diff = total$max - total$min
+poids_total = sum(total$diff)
+# calcul des poids par modalite
+grille = merge(param,mini,all.x=TRUE)
+grille$delta = grille$COEF - grille$min
+grille$POIDS = round((100*grille$delta) / poids_total)
+grille[which(VARIABLE!=""),c("VARIABLE","MODALITE","POIDS")]
+View(grille)
+
+
+```
+
+```{r}
+# ---------------------------------------------------------------------------------------------------------
+# P. PREVISION HORS ECHANTILLON  #
+# ---------------------------------------------------------------------------------------------------------
+# Importer le data test et surprimer le colonne numero identifie #
+n.dt <- read.xlsx("/Volumes/CHAU/Projet/datatest.xlsx")[,-1]
+```
+
+```{r}
+# Transformer le data test sous le forme des variables transformes comme l'etape dernier #
+n.dt$Age <- cut(n.dt$Age,c(218,421,546,690,Inf),right=F)
+n.dt$Anciennete_emploi <- cut(n.dt$Anciennete_emploi,c(0,30,80,169,Inf),right=F)
+n.dt$Anciennete_banque <- cut(n.dt$Anciennete_banque,c(0,103,203,338,Inf),right=F)
+n.dt$Anciennete_domicile <- cut(n.dt$Anciennete_domicile,c(0,31,81,202,Inf),right=F)
+n.dt$Revenus <- cut(n.dt$Revenus,c(800,1487,2000,2886,Inf),right=F)
+n.dt$Charges <- cut(n.dt$Charges,c(0,350,580,Inf),right=F)
+n.dt$Enfants <- recode(n.dt$Enfants, "1:2='Plus 1 enfants';3='3 enfants';4:7='Plus de 3 enfants'; 0='Aucun enfant'")
+colnames(n.dt)=c("Cible","Age_emprt1","Situation_familiale","Enfants","Job","Anciennete_emploi1","Retraite","Statut_domicile","Anciennete_domicile1","Anciennete_banque1","Revenus1","Charges1","Telephone")
+# Appliquer sur le nouveau data # 
+# Creer une nouvelle variable Score dans le tableau qui exprimer le Score de chaque individuel
+n.dt$score <- predict(modele.forward,newdata=n.dt,type="response")
+View(n.dt)
+
+
+```
+
+```
+```{r}
+```{r}
+# ---------------------------------------------------------------------------------------------------------
+# FIN DE PROGRAMME----------------# 
+# ---------------------------------------------------------------------------------------------------------
+```
+
+```
+
+```{r}
+
+```
+
